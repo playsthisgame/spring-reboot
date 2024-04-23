@@ -17,48 +17,31 @@ import (
 
 func main() {
 	var dir string
-	var command string
-	var args cli.StringSlice
-	var include string
+	var port int
+	command := "mvn"
+	args := []string{"spring-boot:run"}
+	include := "src"
 
 	app := &cli.App{
-		Name:  "Go Watch Run",
-		Usage: "A simple utility written in go to watch a dir and run a command when something changes",
+		Name:  "Spring Reboot",
+		Usage: "A simple utility to assist in the development of Spring Boot web apps",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:        "dir",
-				Value:       "/Users/chris/workspace/projects/spacebased/spacebased-api",
+				Value:       ".",
 				Aliases:     []string{"d"},
 				Destination: &dir,
 			},
-			&cli.StringFlag{
-				Name:        "command",
-				Value:       "mvn",
-				Aliases:     []string{"c"},
-				Destination: &command,
-			},
-			&cli.StringSliceFlag{
-				Name:        "args",
-				Value:       cli.NewStringSlice("spring-boot:run"),
-				Aliases:     []string{"a"},
-				Destination: &args,
-			},
-			&cli.StringFlag{
-				Name:        "include",
-				Value:       "src",
-				Aliases:     []string{"i"},
-				Destination: &include,
+			&cli.IntFlag{
+				Name:        "port",
+				Value:       8080,
+				Aliases:     []string{"p"},
+				Destination: &port,
 			},
 		},
 		Action: func(c *cli.Context) error {
 			if c.NArg() > 0 {
 				dir = c.Args().First()
-			}
-			if command == "" {
-				fmt.Println("Include a command to run")
-			}
-			if len(args.Value()) == 0 {
-				fmt.Println("Include some args")
 			}
 
 			w := watcher.New()
@@ -66,10 +49,8 @@ func main() {
 			w.SetMaxEvents(1)
 			w.FilterOps(watcher.Move, watcher.Write, watcher.Create, watcher.Remove, watcher.Rename)
 
-			if include != "" {
-				r := regexp.MustCompile("^.*" + include + ".*$")
-				w.AddFilterHook(watcher.RegexFilterHook(r, true))
-			}
+			r := regexp.MustCompile("^.*" + include + ".*$")
+			w.AddFilterHook(watcher.RegexFilterHook(r, true))
 
 			if err := w.AddRecursive(dir); err != nil {
 				log.Fatalln(err)
@@ -92,7 +73,7 @@ func main() {
 								}
 							}
 						}
-						cmd := exec.Command(command, args.Value()...)
+						cmd := exec.Command(command, args...)
 						cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
 						cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuff)
 						cmd.Dir = dir
@@ -118,6 +99,25 @@ func main() {
 			}
 
 			return nil
+		},
+		Commands: []*cli.Command{
+			{
+				Name:    "stop",
+				Aliases: []string{"s"},
+				Usage:   "Stop a running app on a given port",
+				Action: func(cCtx *cli.Context) error {
+					if port == 0 {
+						fmt.Println("Please enter a valid port")
+					}
+					out, err := exec.Command(fmt.Sprintf("lsof -i :%v", port)).Output()
+
+					if err != nil {
+						fmt.Printf(err.Error())
+					}
+					exec.Command("kill", "-9", string(out))
+					return nil
+				},
+			},
 		},
 	}
 

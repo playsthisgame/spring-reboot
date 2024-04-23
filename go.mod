@@ -1,4 +1,4 @@
-module gwr
+module srb 
 
 go 1.22.2
 
