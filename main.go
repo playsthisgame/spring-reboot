@@ -40,11 +40,19 @@ func main() {
 						Aliases:     []string{"d"},
 						Destination: &dir,
 					},
+					&cli.IntFlag{
+						Name:        "port",
+						Value:       8080,
+						Aliases:     []string{"p"},
+						Destination: &port,
+					},
 				},
 				Action: func(c *cli.Context) error {
 					if c.NArg() > 0 {
 						dir = c.Args().First()
 					}
+
+					startApp(&dir, &command, &args)
 
 					w := watcher.New()
 
@@ -58,36 +66,13 @@ func main() {
 						log.Fatalln(err)
 					}
 
-					var stdoutBuf, stderrBuff bytes.Buffer
-					var process *os.Process
-
 					go func() {
 						for {
 							select {
 							case event := <-w.Event:
 								fmt.Println(event)
-								if process != nil {
-									// kill process if there is still one running
-									pgid, err := syscall.Getpgid(process.Pid)
-									if err == nil {
-										if err := syscall.Kill(-pgid, syscall.SIGKILL); err != nil {
-											log.Fatalln(err)
-										}
-									}
-								}
-								cmd := exec.Command(command, args...)
-								cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
-								cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuff)
-								cmd.Dir = dir
-								cmd.SysProcAttr = &syscall.SysProcAttr{
-									Setpgid: true,
-								}
-
-								err := cmd.Start()
-								process = cmd.Process
-								if err != nil {
-									fmt.Printf(err.Error())
-								}
+								stopApp(&port)
+								startApp(&dir, &command, &args)
 							case err := <-w.Error:
 								log.Fatalln(err)
 							case <-w.Closed:
@@ -119,19 +104,7 @@ func main() {
 					if port == 0 {
 						fmt.Println("Please enter a valid port")
 					}
-					find, b := exec.Command("lsof", "-n", fmt.Sprintf("-i4TCP:%v", port)), new(bytes.Buffer)
-					find.Stdout = b
-					find.Run()
-					s := bufio.NewScanner(b)
-					for s.Scan() {
-						if strings.Contains(s.Text(), "LISTEN") {
-							words := strings.Fields(s.Text())
-							exec.Command("kill", "-9", words[1]).Run()
-							return nil
-						}
-					}
-
-					fmt.Printf("process not found on %v", port)
+					stopApp(&port)
 					return nil
 				},
 			},
@@ -142,4 +115,37 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+}
+
+func startApp(dir *string, command *string, args *[]string) *os.Process {
+	var stdoutBuf, stderrBuff bytes.Buffer
+	cmd := exec.Command(*command, *args...)
+	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
+	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuff)
+	cmd.Dir = *dir
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setpgid: true,
+	}
+
+	err := cmd.Start()
+	if err != nil {
+		fmt.Printf(err.Error())
+	}
+	return cmd.Process
+}
+
+func stopApp(port *int) {
+	find, b := exec.Command("lsof", "-n", fmt.Sprintf("-i4TCP:%v", *port)), new(bytes.Buffer)
+	find.Stdout = b
+	find.Run()
+	s := bufio.NewScanner(b)
+	for s.Scan() {
+		if strings.Contains(s.Text(), "LISTEN") {
+			words := strings.Fields(s.Text())
+			exec.Command("kill", "-9", words[1]).Run()
+			return
+		}
+	}
+
+	fmt.Printf("process not found on %v", *port)
 }
