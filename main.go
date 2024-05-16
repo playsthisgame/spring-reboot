@@ -20,6 +20,7 @@ import (
 func main() {
 	var dir string
 	var port int
+	var propsDir string
 	command := "mvn"
 	args := []string{"spring-boot:run"}
 	include := "src"
@@ -46,13 +47,19 @@ func main() {
 						Aliases:     []string{"p"},
 						Destination: &port,
 					},
+					&cli.StringFlag{
+						Name:        "propsDir",
+						Value:       "",
+						Aliases:     []string{"pd"},
+						Destination: &propsDir,
+					},
 				},
 				Action: func(c *cli.Context) error {
 					if c.NArg() > 0 {
 						dir = c.Args().First()
 					}
 
-					startApp(&dir, &command, &args)
+					startApp(&dir, &command, &args, &propsDir)
 
 					w := watcher.New()
 
@@ -72,7 +79,7 @@ func main() {
 							case event := <-w.Event:
 								fmt.Println(event)
 								stopApp(&port)
-								startApp(&dir, &command, &args)
+								startApp(&dir, &command, &args, &propsDir)
 							case err := <-w.Error:
 								log.Fatalln(err)
 							case <-w.Closed:
@@ -117,8 +124,11 @@ func main() {
 	}
 }
 
-func startApp(dir *string, command *string, args *[]string) *os.Process {
+func startApp(dir *string, command *string, args *[]string, propsDir *string) *os.Process {
 	var stdoutBuf, stderrBuff bytes.Buffer
+	if len(*propsDir) > 0 {
+		addProps(propsDir, args)
+	}
 	cmd := exec.Command(*command, *args...)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &stderrBuff)
@@ -132,6 +142,18 @@ func startApp(dir *string, command *string, args *[]string) *os.Process {
 		fmt.Printf(err.Error())
 	}
 	return cmd.Process
+}
+
+func addProps(propsDir *string, args *[]string) {
+	// open jsonFile
+	jsonFile, err := os.ReadFile(*propsDir)
+	if err != nil {
+		fmt.Println(err)
+	}
+	// add contents to string
+	json := string(jsonFile)
+	fmt.Printf("--spring.application.json=%v", json)
+	*args = append(*args, fmt.Sprintf("--spring.application.json=%v", json))
 }
 
 func stopApp(port *int) {
