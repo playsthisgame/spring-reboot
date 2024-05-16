@@ -20,7 +20,7 @@ import (
 func main() {
 	var dir string
 	var port int
-	var propsDir string
+	var configFile string
 	command := "mvn"
 	args := []string{"spring-boot:run"}
 	include := "src"
@@ -48,10 +48,10 @@ func main() {
 						Destination: &port,
 					},
 					&cli.StringFlag{
-						Name:        "propsDir",
+						Name:        "configFile",
 						Value:       "",
-						Aliases:     []string{"pd"},
-						Destination: &propsDir,
+						Aliases:     []string{"cf"},
+						Destination: &configFile,
 					},
 				},
 				Action: func(c *cli.Context) error {
@@ -59,7 +59,7 @@ func main() {
 						dir = c.Args().First()
 					}
 
-					startApp(&dir, &command, &args, &propsDir)
+					startApp(&dir, &command, &args, &configFile)
 
 					w := watcher.New()
 
@@ -79,7 +79,7 @@ func main() {
 							case event := <-w.Event:
 								fmt.Println(event)
 								stopApp(&port)
-								startApp(&dir, &command, &args, &propsDir)
+								startApp(&dir, &command, &args, &configFile)
 							case err := <-w.Error:
 								log.Fatalln(err)
 							case <-w.Closed:
@@ -124,10 +124,10 @@ func main() {
 	}
 }
 
-func startApp(dir *string, command *string, args *[]string, propsDir *string) *os.Process {
+func startApp(dir *string, command *string, args *[]string, configFile *string) *os.Process {
 	var stdoutBuf, stderrBuff bytes.Buffer
-	if len(*propsDir) > 0 {
-		addProps(propsDir, args)
+	if len(*configFile) > 0 {
+		*args = append(*args, fmt.Sprintf("-Dspring-boot.run.jvmArguments=\"-Dspring.config.additional-location=%v\"", *configFile))
 	}
 	cmd := exec.Command(*command, *args...)
 	cmd.Stdout = io.MultiWriter(os.Stdout, &stdoutBuf)
@@ -142,18 +142,6 @@ func startApp(dir *string, command *string, args *[]string, propsDir *string) *o
 		fmt.Printf(err.Error())
 	}
 	return cmd.Process
-}
-
-func addProps(propsDir *string, args *[]string) {
-	// open jsonFile
-	jsonFile, err := os.ReadFile(*propsDir)
-	if err != nil {
-		fmt.Println(err)
-	}
-	// add contents to string
-	json := string(jsonFile)
-	fmt.Printf("--spring.application.json=%v", json)
-	*args = append(*args, fmt.Sprintf("--spring.application.json=%v", json))
 }
 
 func stopApp(port *int) {
